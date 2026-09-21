@@ -1,0 +1,30 @@
+[project]
+name = "athlete-coach"
+version = "0.1.0"
+description = "AI athlete coach: unifies Strava + Garmin data, computes training load, builds/adjusts training plans, and coaches nutrition/body composition/strength — exposed as an MCP server for Claude."
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.0.0",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "garminconnect>=0.2.19",
+    "python-dateutil>=2.9",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+athlete-coach = "athlete_coach.server:main"
+athlete-coach-init-db = "athlete_coach.db:main"
+athlete-coach-strava-auth = "athlete_coach.strava_client:run_oauth_flow"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
