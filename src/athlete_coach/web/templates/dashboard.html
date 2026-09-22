@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Athlete Coach</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/vendor/chart.umd.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <h1>Athlete Coach</h1>
+      <span id="today-date" class="muted"></span>
+    </div>
+    <div class="topbar-actions">
+      <span id="sync-status" class="muted small"></span>
+      <button id="sync-btn" class="btn">Sync now</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stats-grid" id="stats-grid" aria-label="Key numbers"></section>
+
+    <section class="charts-grid">
+      <div class="card">
+        <h2>Fitness &amp; Fatigue <span class="muted small">(CTL / ATL / TSB, 90 days)</span></h2>
+        <canvas id="fitness-chart" height="90"></canvas>
+      </div>
+      <div class="card">
+        <h2>Body Weight <span class="muted small">(90 days)</span></h2>
+        <canvas id="weight-chart" height="90"></canvas>
+      </div>
+    </section>
+
+    <section class="panels-grid">
+      <div class="card" id="plan-card">
+        <h2>This Week's Plan</h2>
+        <div id="plan-content"></div>
+      </div>
+
+      <div class="card" id="activities-card">
+        <h2>Recent Activities</h2>
+        <div id="activities-content"></div>
+      </div>
+
+      <div class="card" id="nutrition-card">
+        <h2>Nutrition Targets</h2>
+        <div id="nutrition-content"></div>
+      </div>
+
+      <div class="card" id="strength-card">
+        <h2>Strength Consistency <span class="muted small">(28 days)</span></h2>
+        <div id="strength-content"></div>
+      </div>
+
+      <div class="card" id="races-card">
+        <h2>Upcoming Races</h2>
+        <div id="races-content"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

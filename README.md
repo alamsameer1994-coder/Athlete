@@ -52,6 +52,9 @@ Garmin Connect ──┘        (activities, daily wellness,
   - `strength.py` — session consistency tracking + phase-based strength
     focus guidance.
 - **`server.py`** — the MCP server (FastMCP) wiring all of the above as tools.
+- **`web/`** — a local read-mostly dashboard (FastAPI + vanilla JS + Chart.js,
+  vendored locally so it works offline) over the same DB and coaching
+  modules — see [Web Dashboard](#web-dashboard) below.
 
 **Design choice:** the code provides structure and real data (periodization
 math, load calculations, weight trends) — it deliberately does *not* hardcode
@@ -125,7 +128,7 @@ You: Sync my data and set my profile — FTP 250W, threshold HR 172, 34 years
      old, male, 178cm. Goal: fat loss, targeting -0.4%/week.
 Claude: [calls sync_all, update_settings]
 
-You: I'm racing a marathon on 2026-04-19. I can currently handle about
+You: I'm racing a marathon on 2027-04-18. I can currently handle about
      6 hours/week and want to peak around 10 hours/week. Build me a plan.
 Claude: [calls create_race_target, create_plan, then reviews/edits the
          default sessions with upsert_planned_workout based on your history]
@@ -139,6 +142,26 @@ You: Am I losing fat at the rate I wanted? Adjust my calories if not.
 Claude: [calls get_body_comp_trend, review_calorie_adherence,
          get_nutrition_targets]
 ```
+
+## Web Dashboard
+
+A local read-mostly view of your data — fitness/fatigue trend chart, weight
+trend chart, this week's plan, recent activities, nutrition targets, strength
+consistency, and upcoming races — plus a "Sync now" button. It reads the same
+`~/.athlete_coach/athlete.db` the MCP server writes to, so anything Claude
+does in conversation (build a plan, adjust a week, log a weigh-in) shows up
+here too.
+
+```bash
+pip install -e ".[web]"
+athlete-coach-web
+# open http://127.0.0.1:8787
+```
+
+It's plain HTML/CSS/JS served by FastAPI — no build step, no external network
+calls at runtime (Chart.js is vendored in `web/static/vendor/`). `GET
+/api/dashboard` returns the same data as JSON if you want to script against
+it or build another view.
 
 ## Tests
 
