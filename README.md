@@ -1,15 +1,15 @@
 # Athlete Coach
 
-A local MCP server that unifies your **Strava** and **Garmin** data into one
-SQLite database and gives Claude tools to act as your AI athlete coach:
-analyze your training week, adjust upcoming weeks based on fatigue/recovery
-signals, build/rebuild periodized plans for a race, and coach calories, body
-composition, and strength.
+A local MCP server that unifies your **Strava**, **Garmin**, and
+**MyFitnessPal** data into one SQLite database and gives Claude tools to act
+as your AI athlete coach: analyze your training week, adjust upcoming weeks
+based on fatigue/recovery signals, build/rebuild periodized plans for a race,
+and coach calories, body composition, and strength.
 
-It runs entirely on your machine. Your Strava tokens, Garmin credentials, and
-all training/body/nutrition data stay in a local SQLite file
-(`~/.athlete_coach/athlete.db`) — nothing is sent anywhere except to
-Strava's/Garmin's own APIs to pull your data.
+It runs entirely on your machine. Your Strava tokens, Garmin/MyFitnessPal
+credentials, and all training/body/nutrition data stay in a local SQLite file
+(`~/.athlete_coach/athlete.db`) — nothing is sent anywhere except to those
+services' own APIs to pull your data.
 
 ## Why no TrainingPeaks integration?
 
@@ -23,10 +23,12 @@ manually if you want.
 ## Architecture
 
 ```
-Strava API v3  ──┐
-                  ├─▶ SQLite (~/.athlete_coach/athlete.db) ─▶ MCP tools ─▶ Claude
-Garmin Connect ──┘        (activities, daily wellness,
- (unofficial lib)          body logs, plans, notes)
+Strava API v3  ────────┐
+                        ├─▶ SQLite (~/.athlete_coach/athlete.db) ─▶ MCP tools ─▶ Claude
+Garmin Connect ─────────┤        (activities, daily wellness, body logs,
+ (unofficial lib)       │         nutrition logs, plans, notes)
+MyFitnessPal ───────────┘
+ (unofficial lib, cookie auth)
 ```
 
 - **`strava_client.py`** — your own Strava OAuth app (one-time browser auth),
@@ -34,10 +36,16 @@ Garmin Connect ──┘        (activities, daily wellness,
 - **`garmin_client.py`** — wraps the unofficial `garminconnect` library using
   your Garmin login. This is a reverse-engineered client; if Garmin changes
   their backend it may need a `pip install -U garminconnect`.
-- **`sync/`** — pulls from both, normalizes into the `activities` table, and
-  de-duplicates Garmin activities that already appear via Strava auto-upload
-  (flagged via `duplicate_of` rather than dropped, so Garmin-only fields
-  aren't lost).
+- **`mfp_client.py`** — wraps the unofficial `myfitnesspal` library.
+  MyFitnessPal dropped username/password login for third-party scripts, so
+  this authenticates with a browser session cookie you copy into `.env`
+  instead (see Setup below) — more fragile than Garmin's login, expect to
+  refresh the cookie every few weeks.
+- **`sync/`** — pulls from all three, normalizes activities/nutrition into
+  their tables, and de-duplicates Garmin activities that already appear via
+  Strava auto-upload (flagged via `duplicate_of` rather than dropped, so
+  Garmin-only fields aren't lost). Nutrition sync never overwrites a day
+  you logged manually via `log_nutrition`.
 - **`coaching/`** — pure-logic modules:
   - `training_load.py` — TSS per activity (power/HR/RPE-based, with a
     duration-only fallback) and CTL/ATL/TSB (fitness/fatigue/form).
@@ -47,8 +55,10 @@ Garmin Connect ──┘        (activities, daily wellness,
     suggested volume adjustment from TSB, acute:chronic ratio, adherence,
     and sleep trend.
   - `nutrition.py` — BMR (Mifflin-St Jeor) + NEAT baseline + real logged
-    training calories → TDEE, goal-based calorie/macro targets, and an
-    adaptive-TDEE-style calorie adjustment based on your actual weight trend.
+    training calories → TDEE, goal-based calorie/macro targets, an
+    adaptive-TDEE-style calorie adjustment based on your actual weight trend,
+    and actual-vs-target intake comparison from logged nutrition (manual or
+    MyFitnessPal).
   - `strength.py` — session consistency tracking + phase-based strength
     focus guidance.
 - **`server.py`** — the MCP server (FastMCP) wiring all of the above as tools.
@@ -87,6 +97,14 @@ cp .env.example .env
   dedicated Garmin account or app-specific credentials if you're not
   comfortable storing your main password in a local file — Garmin has no
   official OAuth app flow for this.)
+- **MyFitnessPal** (optional): while logged into myfitnesspal.com in a
+  browser, open DevTools → Network, click any request to myfitnesspal.com,
+  and copy the full `Cookie` request header value into `MFP_COOKIE` in
+  `.env`. There's no password-based login left for third-party tools, so
+  this is the only way in — see the comment above `MFP_COOKIE` in
+  `.env.example` for details. Skip this if you don't use MyFitnessPal; the
+  rest of the system works fine without it (log intake with `log_nutrition`
+  instead).
 
 ### 3. Initialize the DB and authorize Strava
 
@@ -140,13 +158,16 @@ Claude: [calls get_week_summary, suggest_week_adjustment, get_fitness_trend,
 
 You: Am I losing fat at the rate I wanted? Adjust my calories if not.
 Claude: [calls get_body_comp_trend, review_calorie_adherence,
-         get_nutrition_targets]
+         get_nutrition_targets — the last one also shows how your actual
+         logged intake (synced from MyFitnessPal, or logged manually)
+         compares to target]
 ```
 
 ## Web Dashboard
 
 A local read-mostly view of your data — fitness/fatigue trend chart, weight
-trend chart, this week's plan, recent activities, nutrition targets, strength
+trend chart, this week's plan, recent activities, nutrition targets (with
+actual-vs-target intake once you've logged or synced some), strength
 consistency, and upcoming races — plus a "Sync now" button. It reads the same
 `~/.athlete_coach/athlete.db` the MCP server writes to, so anything Claude
 does in conversation (build a plan, adjust a week, log a weigh-in) shows up
@@ -171,9 +192,12 @@ pytest
 
 ## Caveats
 
-- **Garmin access is unofficial.** `garminconnect` reverse-engineers Garmin
-  Connect's own API; it can break on Garmin-side changes and its use may be
-  against Garmin's Terms of Service. Use at your own discretion.
+- **Garmin and MyFitnessPal access are both unofficial.** `garminconnect` and
+  `myfitnesspal` reverse-engineer those services' own web APIs; both can
+  break on backend changes and their use may be against those services'
+  Terms of Service. Use at your own discretion. MyFitnessPal in particular
+  has no login path left for third-party tools at all (see Setup) and its
+  session cookie will need refreshing every few weeks.
 - **TSS estimates are approximate**, especially the HR-based and RPE-based
   fallbacks — treat CTL/ATL/TSB as directional trends, not lab-grade numbers.
 - **Nutrition/strength guidance is a heuristic starting point**, not medical

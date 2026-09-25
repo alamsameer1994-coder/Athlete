@@ -144,6 +144,22 @@ function renderNutrition(data) {
     el.innerHTML = `<div class="empty-state">Set height/age/sex and log a weigh-in to compute targets.</div>`;
     return;
   }
+  const actual = n.actual_intake;
+  let actualHtml = "";
+  if (actual && actual.days_logged > 0) {
+    const diff = actual.calorie_diff;
+    const tone = Math.abs(diff) <= n.target_calories * 0.1 ? "good" : Math.abs(diff) <= n.target_calories * 0.2 ? "" : "bad";
+    const sign = diff > 0 ? "+" : "";
+    actualHtml = `
+      <div class="sub" style="margin-top:12px;">
+        Actual (last ${actual.lookback_days}d, ${actual.days_logged}/${actual.lookback_days} days logged):
+        <strong style="color:var(--${tone || "text"});">${actual.avg_calories} kcal/day</strong>
+        (${sign}${diff} vs target)
+      </div>`;
+  } else if (actual) {
+    actualHtml = `<div class="empty-state" style="padding:8px 0 0;">${actual.message}</div>`;
+  }
+
   el.innerHTML = `
     <div class="stat-tile" style="box-shadow:none;border:none;padding:0;">
       <div class="label">Goal: ${n.goal.replace("_", " ")}</div>
@@ -154,7 +170,8 @@ function renderNutrition(data) {
       <div><div class="m-val">${n.protein_g}g</div><div class="m-label">Protein</div></div>
       <div><div class="m-val">${n.carbs_g}g</div><div class="m-label">Carbs</div></div>
       <div><div class="m-val">${n.fat_g}g</div><div class="m-label">Fat</div></div>
-    </div>`;
+    </div>
+    ${actualHtml}`;
 }
 
 function renderStrength(data) {
@@ -195,6 +212,7 @@ async function loadDashboard() {
   const parts = [];
   parts.push(sync.strava_authorized ? "Strava connected" : "Strava not connected");
   parts.push(sync.garmin_configured ? "Garmin configured" : "Garmin not configured");
+  parts.push(sync.myfitnesspal_configured ? "MyFitnessPal configured" : "MyFitnessPal not configured");
   parts.push(`last synced ${fmtDateTime(sync.last_activity_synced_at)}`);
   document.getElementById("sync-status").textContent = parts.join(" · ");
 

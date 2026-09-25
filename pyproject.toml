@@ -8,8 +8,13 @@ dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
     "garminconnect>=0.2.19",
+    "myfitnesspal>=2.1.0",
     "python-dateutil>=2.9",
     "pydantic>=2.6",
+    # myfitnesspal's metadata pins typing-extensions==4.12.2, which is older
+    # than pydantic/mcp need; pin our own floor explicitly so the resolver
+    # picks a version that satisfies both instead of downgrading silently.
+    "typing-extensions>=4.16.0",
 ]
 
 [project.optional-dependencies]

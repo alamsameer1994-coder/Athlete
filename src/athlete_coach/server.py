@@ -15,6 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from athlete_coach.coaching import nutrition, plan_adjuster, plan_builder, strength, training_load
 from athlete_coach.db import get_conn, get_setting, init_db, set_setting
 from athlete_coach.sync.garmin_sync import sync_garmin_activities, sync_garmin_body, sync_garmin_daily_metrics
+from athlete_coach.sync.myfitnesspal_sync import sync_myfitnesspal_nutrition
 from athlete_coach.sync.strava_sync import sync_strava_activities
 
 mcp = MCPServer("athlete-coach")
@@ -44,18 +45,31 @@ def sync_garmin(days_back: int = 90, include_wellness: bool = True) -> dict:
 
 
 @mcp.tool()
+def sync_myfitnesspal(days_back: int = 14) -> dict:
+    """Pull logged nutrition (calories/macros) from MyFitnessPal into the
+    local database. Never overwrites a day logged manually via log_nutrition.
+    One request per day, so keep days_back modest — this is for catching up
+    recent days, not a full history backfill."""
+    with get_conn() as conn:
+        return sync_myfitnesspal_nutrition(conn, days_back)
+
+
+@mcp.tool()
 def sync_all(days_back: int = 90) -> dict:
-    """Sync both Strava and Garmin (activities + Garmin wellness/body data)."""
+    """Sync Strava, Garmin (activities + wellness/body data), and MyFitnessPal
+    (last 14 days of logged nutrition, regardless of days_back)."""
     with get_conn() as conn:
         strava = sync_strava_activities(conn, days_back)
         garmin_activities = sync_garmin_activities(conn, days_back)
         garmin_metrics = sync_garmin_daily_metrics(conn, min(days_back, 60))
         garmin_body = sync_garmin_body(conn, min(days_back, 60))
+        myfitnesspal = sync_myfitnesspal_nutrition(conn, 14)
     return {
         "strava": strava,
         "garmin_activities": garmin_activities,
         "garmin_daily_metrics": garmin_metrics,
         "garmin_body": garmin_body,
+        "myfitnesspal": myfitnesspal,
     }
 
 
@@ -422,15 +436,16 @@ def get_body_comp_trend(lookback_days: int = 28) -> dict:
 @mcp.tool()
 def log_nutrition(date_: str, calories: float | None = None, protein_g: float | None = None,
                    carbs_g: float | None = None, fat_g: float | None = None, notes: str = "") -> dict:
-    """Log actual intake for a date (for adherence tracking)."""
+    """Log actual intake for a date (for adherence tracking). Manual entries
+    are never overwritten by a later MyFitnessPal sync."""
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO nutrition_logs (date, calories, protein_g, carbs_g, fat_g, notes, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO nutrition_logs (date, calories, protein_g, carbs_g, fat_g, source, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'manual', ?, datetime('now'))
             ON CONFLICT(date) DO UPDATE SET
                 calories=excluded.calories, protein_g=excluded.protein_g, carbs_g=excluded.carbs_g,
-                fat_g=excluded.fat_g, notes=excluded.notes, updated_at=datetime('now')
+                fat_g=excluded.fat_g, source='manual', notes=excluded.notes, updated_at=datetime('now')
             """,
             (date_, calories, protein_g, carbs_g, fat_g, notes),
         )
@@ -440,9 +455,11 @@ def log_nutrition(date_: str, calories: float | None = None, protein_g: float | 
 @mcp.tool()
 def get_nutrition_targets(goal: str | None = None, aggressiveness: str = "moderate", lookback_days: int = 14) -> dict:
     """Calorie/macro targets from BMR (Mifflin-St Jeor) + NEAT baseline + real
-    logged training calories. goal: 'fat_loss' | 'maintenance' | 'muscle_gain'
-    (defaults to the athlete's saved nutrition_goal setting). Requires
-    height_cm, age, sex (update_settings) and a recent weight (log_body_metrics)."""
+    logged training calories, plus how actual logged intake (manual or
+    MyFitnessPal, over lookback_days) compares to that target. goal:
+    'fat_loss' | 'maintenance' | 'muscle_gain' (defaults to the athlete's
+    saved nutrition_goal setting). Requires height_cm, age, sex
+    (update_settings) and a recent weight (log_body_metrics)."""
     with get_conn() as conn:
         height = get_setting(conn, "height_cm")
         age = get_setting(conn, "age")
@@ -465,7 +482,8 @@ def get_nutrition_targets(goal: str | None = None, aggressiveness: str = "modera
         bmr = nutrition.bmr_mifflin_st_jeor(weight_kg, float(height), int(float(age)), sex)  # type: ignore[arg-type]
         tdee_info = nutrition.estimate_tdee(conn, bmr, lookback_days)
         targets = nutrition.calorie_and_macro_targets(weight_kg, tdee_info["tdee"], goal, aggressiveness)  # type: ignore[arg-type]
-        return {"weight_kg": weight_kg, "goal": goal, **tdee_info, **targets}
+        actual = nutrition.intake_vs_target(conn, targets["target_calories"], targets["protein_g"], lookback_days)
+        return {"weight_kg": weight_kg, "goal": goal, **tdee_info, **targets, "actual_intake": actual}
 
 
 @mcp.tool()

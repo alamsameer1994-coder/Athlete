@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS nutrition_logs (
     protein_g REAL,
     carbs_g REAL,
     fat_g REAL,
+    source TEXT,                       -- manual | myfitnesspal
+    complete INTEGER,                  -- 1 if the MFP diary was marked complete for the day
     notes TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -154,10 +156,27 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the initial release: (table, column, DDL type). Applied
+# to existing databases that predate them, since `CREATE TABLE IF NOT EXISTS`
+# only helps on a fresh DB.
+_COLUMN_MIGRATIONS = [
+    ("nutrition_logs", "source", "TEXT"),
+    ("nutrition_logs", "complete", "INTEGER"),
+]
+
+
+def _apply_column_migrations(conn: sqlite3.Connection) -> None:
+    for table, column, ddl_type in _COLUMN_MIGRATIONS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
+
+
 def init_db(db_path: Path | None = None) -> None:
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        _apply_column_migrations(conn)
         conn.commit()
     finally:
         conn.close()

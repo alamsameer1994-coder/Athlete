@@ -19,6 +19,7 @@ from athlete_coach.coaching import nutrition, plan_adjuster, strength, training_
 from athlete_coach.config import get_config
 from athlete_coach.db import get_conn, get_setting, init_db
 from athlete_coach.sync.garmin_sync import sync_garmin_activities, sync_garmin_body, sync_garmin_daily_metrics
+from athlete_coach.sync.myfitnesspal_sync import sync_myfitnesspal_nutrition
 from athlete_coach.sync.strava_sync import sync_strava_activities
 
 BASE_DIR = Path(__file__).parent
@@ -117,7 +118,11 @@ def api_dashboard() -> dict:
             tdee_info = nutrition.estimate_tdee(conn, bmr, 14)
             goal = settings["nutrition_goal"] or "maintenance"
             targets = nutrition.calorie_and_macro_targets(weight_row["weight_kg"], tdee_info["tdee"], goal)
-            nutrition_targets = {"weight_kg": weight_row["weight_kg"], "goal": goal, **tdee_info, **targets}
+            actual_intake = nutrition.intake_vs_target(conn, targets["target_calories"], targets["protein_g"], 14)
+            nutrition_targets = {
+                "weight_kg": weight_row["weight_kg"], "goal": goal, **tdee_info, **targets,
+                "actual_intake": actual_intake,
+            }
 
         strength_info = strength.strength_consistency(conn, 28)
         last_sync_row = conn.execute("SELECT MAX(created_at) as t FROM activities").fetchone()
@@ -126,6 +131,7 @@ def api_dashboard() -> dict:
     sync_status = {
         "strava_authorized": (cfg.home_dir / "strava_token.json").exists(),
         "garmin_configured": bool(cfg.garmin_email and cfg.garmin_password) or (cfg.home_dir / "garmin_tokens").exists(),
+        "myfitnesspal_configured": bool(cfg.mfp_cookie),
         "last_activity_synced_at": last_sync_row["t"] if last_sync_row else None,
     }
 
@@ -154,11 +160,13 @@ def api_sync(days_back: int = 90) -> dict:
         garmin_activities = sync_garmin_activities(conn, days_back)
         garmin_metrics = sync_garmin_daily_metrics(conn, min(days_back, 60))
         garmin_body = sync_garmin_body(conn, min(days_back, 60))
+        myfitnesspal = sync_myfitnesspal_nutrition(conn, 14)
     return {
         "strava": strava,
         "garmin_activities": garmin_activities,
         "garmin_daily_metrics": garmin_metrics,
         "garmin_body": garmin_body,
+        "myfitnesspal": myfitnesspal,
     }
 
 

@@ -29,6 +29,8 @@ class Config:
     garmin_email: str | None
     garmin_password: str | None
 
+    mfp_cookie: str | None
+
     timezone: str
 
     @classmethod
@@ -46,6 +48,7 @@ class Config:
             ),
             garmin_email=os.environ.get("GARMIN_EMAIL"),
             garmin_password=os.environ.get("GARMIN_PASSWORD"),
+            mfp_cookie=os.environ.get("MFP_COOKIE"),
             timezone=os.environ.get("ATHLETE_COACH_TZ", "Europe/London"),
         )
 

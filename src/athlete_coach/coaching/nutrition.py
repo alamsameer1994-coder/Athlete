@@ -165,3 +165,54 @@ def review_calorie_adherence(
         reason = "Maintenance goal: trend should hover near 0%/wk." if adjustment else "Weight stable — on track."
 
     return {**trend, "suggested_calorie_adjustment_pct": adjustment, "reason": reason}
+
+
+def intake_vs_target(
+    conn: sqlite3.Connection,
+    target_calories: float,
+    target_protein_g: float | None = None,
+    lookback_days: int = 14,
+) -> dict:
+    """Compares actual logged intake (manual or MyFitnessPal) against the
+    calorie/protein target over the lookback window, plus a logging-rate
+    signal — a target with no logged intake to compare against is just a
+    number, this is what tells you whether you're actually near it."""
+    start = (date.today() - timedelta(days=lookback_days)).isoformat()
+    rows = conn.execute(
+        "SELECT date, calories, protein_g, complete FROM nutrition_logs WHERE date >= ? ORDER BY date",
+        (start,),
+    ).fetchall()
+
+    logged_days = [r for r in rows if r["calories"] is not None]
+    days_logged = len(logged_days)
+    logging_rate_pct = round(100 * days_logged / lookback_days) if lookback_days else 0
+
+    if not logged_days:
+        return {
+            "lookback_days": lookback_days,
+            "days_logged": 0,
+            "logging_rate_pct": 0,
+            "message": "No logged intake in this window — sync MyFitnessPal or use log_nutrition.",
+        }
+
+    avg_calories = sum(r["calories"] for r in logged_days) / days_logged
+    calorie_diff = avg_calories - target_calories
+
+    result = {
+        "lookback_days": lookback_days,
+        "days_logged": days_logged,
+        "logging_rate_pct": logging_rate_pct,
+        "avg_calories": round(avg_calories),
+        "target_calories": round(target_calories),
+        "calorie_diff": round(calorie_diff),
+        "adherence_pct": round(100 * avg_calories / target_calories) if target_calories else None,
+    }
+
+    protein_days = [r for r in logged_days if r["protein_g"] is not None]
+    if protein_days and target_protein_g:
+        avg_protein = sum(r["protein_g"] for r in protein_days) / len(protein_days)
+        result["avg_protein_g"] = round(avg_protein)
+        result["target_protein_g"] = round(target_protein_g)
+        result["protein_diff_g"] = round(avg_protein - target_protein_g)
+
+    return result
